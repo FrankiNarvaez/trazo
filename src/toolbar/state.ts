@@ -1,4 +1,4 @@
-import { COLORS, isHexColor, isInkTool, type InkTool, type ToolState } from "../shared/tools";
+import { COLORS, isHexColor, isInkTool, sanitizeSizes, type InkTool, type ToolState } from "../shared/tools";
 import type { Edge, Orientation } from "./dock";
 
 export interface Layout {
@@ -24,7 +24,7 @@ export interface Saved {
 const KEY = "trazo:v1";
 
 const defaults = (): Saved => ({
-  tools: { tool: "pointer", shape: "arrow", color: COLORS[0], size: 1, inkHidden: false, nextNumber: 1 },
+  tools: { tool: "pointer", shape: "arrow", color: COLORS[0], size: 1, inkHidden: false, nextNumber: 1, custom: {} },
   lastDrawTool: "pen",
   palette: [...COLORS],
   customColor: null,
@@ -51,6 +51,7 @@ export function load(): Saved {
         color: isHexColor(tools.color) ? tools.color : palette[0],
         inkHidden: false,
         nextNumber: 1,
+        custom: sanitizeSizes(tools.custom),
       },
       lastDrawTool: saved.lastDrawTool && isInkTool(saved.lastDrawTool) ? saved.lastDrawTool : base.lastDrawTool,
       palette,

@@ -18,6 +18,7 @@ import {
   PANEL_LABEL,
   PANEL_OPEN,
   PANEL_PICK,
+  PANEL_SIZE,
   REQUEST,
   REVEAL,
   TOGGLE_DRAW,
@@ -34,6 +35,10 @@ import {
   isHexColor,
   isInkTool,
   nextBadgeNumber,
+  clampSize,
+  presetWidth,
+  widthOf,
+  SIZE_RANGES,
   type SizeIndex,
   type Tool,
   type ToolState,
@@ -81,7 +86,8 @@ const view = new ToolbarView(bar, {
   pickSwatch,
   editSwatch: (index, opener) => togglePanel({ kind: "swatch", index }, opener),
   pickCustom: (opener) => togglePanel({ kind: "custom" }, opener),
-  cycleSize: () => setTools({ size: ((state.tools.size + 1) % 3) as SizeIndex }),
+  editTool: (tool, opener) => togglePanel({ kind: "tool", tool }, opener),
+  cycleSize: () => pickSize(((state.tools.size + 1) % 3) as SizeIndex),
   undo,
   clear,
   more,
@@ -121,6 +127,17 @@ function setTools(patch: Partial<ToolState>): void {
   render();
 }
 
+/**
+ * Thin / medium / thick, from the size button or [ ]. The current tool drops the size set in
+ * its settings, so the preset you pick is the one you get.
+ */
+function pickSize(size: SizeIndex): void {
+  const custom = { ...state.tools.custom };
+  if (isDrawTool(state.tools.tool)) delete custom[state.tools.tool];
+  if (panel?.kind === "tool") closePanel();
+  setTools({ size, custom });
+}
+
 function pickTool(tool: Tool): void {
   if (tool === "shape" && state.tools.tool === "shape") {
     const i = SHAPES.indexOf(state.tools.shape);
@@ -154,7 +171,7 @@ function apply(action: Action): void {
     case "color":
       return pickSwatch(action.index);
     case "size":
-      return setTools({ size: Math.min(2, Math.max(0, state.tools.size + action.delta)) as SizeIndex });
+      return pickSize(Math.min(2, Math.max(0, state.tools.size + action.delta)) as SizeIndex);
     case "undo":
       return undo();
     case "redo":
@@ -172,8 +189,11 @@ function apply(action: Action): void {
 
 // ── Color panel: a window of its own beside the toolbar (src/panel/) ─────────
 
-const samePanel = (a: PanelTarget, b: PanelTarget) =>
-  a.kind === "swatch" ? b.kind === "swatch" && a.index === b.index : b.kind === "custom";
+function samePanel(a: PanelTarget, b: PanelTarget): boolean {
+  if (a.kind === "swatch") return b.kind === "swatch" && a.index === b.index;
+  if (a.kind === "tool") return b.kind === "tool" && a.tool === b.tool;
+  return b.kind === "custom";
+}
 
 /**
  * Opens the panel beside `opener` to edit a swatch or pick any color, or closes it if it's
@@ -182,20 +202,43 @@ const samePanel = (a: PanelTarget, b: PanelTarget) =>
 function togglePanel(target: PanelTarget, opener: HTMLElement): void {
   if (panel && samePanel(panel, target)) return closePanel();
   if (!frame) return;
-  const color = target.kind === "swatch" ? state.palette[target.index] : (state.customColor ?? state.tools.color);
-  panel = target;
-  if (target.kind === "custom") state.customColor = color;
-  setTools({ color });
   const r = opener.getBoundingClientRect();
   const s = nativeScale();
-  void emitTo<PanelOpen>(PANEL_LABEL, PANEL_OPEN, {
-    title: target.kind === "swatch" ? `${t.color} ${target.index + 1}` : t.customColor,
-    color,
-    original: target.kind === "swatch" ? COLORS[target.index] : null,
+  const placement = {
     anchor: { x: frame.x + r.left * s, y: frame.y + r.top * s, width: r.width * s, height: r.height * s },
     bar: frame,
     orientation: state.layout.orientation,
     hideFromCapture: state.layout.hideFromCapture,
+  };
+  if (target.kind === "tool") {
+    // A tool's settings, beside its button; they don't change the tool or color in use.
+    const { tool } = target;
+    const [min, max] = SIZE_RANGES[tool];
+    panel = target;
+    void emitTo<PanelOpen>(PANEL_LABEL, PANEL_OPEN, {
+      kind: "tool",
+      title: t[tool],
+      tool,
+      width: widthOf(tool, state.tools),
+      preset: presetWidth(tool, state.tools.size),
+      min,
+      max,
+      custom: state.tools.custom[tool] !== undefined,
+      color: state.tools.color,
+      ...placement,
+    });
+    return render();
+  }
+  const color = target.kind === "swatch" ? state.palette[target.index] : (state.customColor ?? state.tools.color);
+  panel = target;
+  if (target.kind === "custom") state.customColor = color;
+  setTools({ color });
+  void emitTo<PanelOpen>(PANEL_LABEL, PANEL_OPEN, {
+    kind: "color",
+    title: target.kind === "swatch" ? `${t.color} ${target.index + 1}` : t.customColor,
+    color,
+    original: target.kind === "swatch" ? COLORS[target.index] : null,
+    ...placement,
   });
 }
 
@@ -475,10 +518,18 @@ void win.listen<string>(CANVAS_CLOSED, ({ payload: label }) => {
 });
 void win.listen(CANVAS_TOUCHED, closePanel);
 void win.listen<string>(PANEL_PICK, ({ payload: color }) => {
-  if (!panel || !isHexColor(color)) return;
+  if (!panel || panel.kind === "tool" || !isHexColor(color)) return;
   if (panel.kind === "swatch") state.palette[panel.index] = color;
   else state.customColor = color;
   setTools({ color });
+});
+/** A size from a tool's settings, live while dragging; null goes back to the preset. */
+void win.listen<number | null>(PANEL_SIZE, ({ payload: size }) => {
+  if (panel?.kind !== "tool") return;
+  const custom = { ...state.tools.custom };
+  if (typeof size === "number" && Number.isFinite(size)) custom[panel.tool] = clampSize(panel.tool, size);
+  else delete custom[panel.tool];
+  setTools({ custom });
 });
 void win.listen(PANEL_DISMISSED, () => {
   panel = null;

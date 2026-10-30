@@ -45,7 +45,7 @@ const liveCanvas = document.getElementById("live") as HTMLCanvasElement;
 const ink = inkCanvas.getContext("2d")!;
 const live = liveCanvas.getContext("2d")!;
 
-let tools: ToolState = { tool: "pointer", shape: "arrow", color: COLORS[0], size: 1, inkHidden: false, nextNumber: 1 };
+let tools: ToolState = { tool: "pointer", shape: "arrow", color: COLORS[0], size: 1, inkHidden: false, nextNumber: 1, custom: {} };
 const drawing = new Drawing();
 const laser = new LaserTrail();
 
@@ -58,7 +58,7 @@ type Gesture =
   | { kind: "place"; at: Point };
 let gesture: Gesture | null = null;
 
-const width = () => widthOf(tools.tool, tools.size);
+const width = () => widthOf(tools.tool, tools);
 
 // ── Painting ─────────────────────────────────────────────────────────────────
 
@@ -115,7 +115,7 @@ function paintLive(now: number): void {
   live.clearRect(0, 0, innerWidth, innerHeight);
   const preview = gesture && strokeFor(gesture, false);
   if (preview) drawStroke(live, preview);
-  if (laser.draw(live, tools.color, widthOf("laser", tools.size), now)) requestFrame();
+  if (laser.draw(live, tools.color, widthOf("laser", tools), now)) requestFrame();
 }
 
 // ── Reporting to the toolbar ─────────────────────────────────────────────────
@@ -264,7 +264,7 @@ function along(from: Point, to: Point, spacing: number): Point[] {
 
 /** Marks every stroke the eraser touches between two points, however deep it sits. */
 function eraseAlong(g: Extract<Gesture, { kind: "erase" }>, from: Point, to: Point): void {
-  const radius = widthOf("eraser", tools.size) / 2;
+  const radius = widthOf("eraser", tools) / 2;
   const points = along(from, to, radius / 2);
   let touched = false;
   for (const s of drawing.strokes) {
@@ -281,7 +281,7 @@ function eraseAlong(g: Extract<Gesture, { kind: "erase" }>, from: Point, to: Poi
  * stroke under each point changes: tapping pen ink drawn over a highlight recolors the ink.
  */
 function recolorAlong(g: Extract<Gesture, { kind: "recolor" }>, from: Point, to: Point): void {
-  const radius = widthOf("recolor", tools.size) / 2;
+  const radius = widthOf("recolor", tools) / 2;
   let touched = false;
   for (const p of along(from, to, radius / 2)) {
     for (let i = drawing.strokes.length - 1; i >= 0; i--) {
@@ -412,10 +412,12 @@ window.addEventListener("keyup", (e) => {
 void win.listen<ToolState>(TOOL_STATE, ({ payload }) => {
   if (gesture && payload.tool !== tools.tool) finish();
   if (editor && payload.tool !== "text") closeEditor(true);
-  // A color or size picked in the toolbar while typing applies to the text in the box.
-  if (editor && (payload.color !== tools.color || payload.size !== tools.size)) {
+  // A color or size picked in the toolbar (or the text tool's settings) while typing applies
+  // to the text in the box.
+  const textSize = widthOf("text", payload);
+  if (editor && (payload.color !== tools.color || textSize !== widthOf("text", tools))) {
     if (payload.color !== tools.color) editor.color = payload.color;
-    if (payload.size !== tools.size) editor.size = widthOf("text", payload.size);
+    if (textSize !== widthOf("text", tools)) editor.size = textSize;
     styleEditor();
   }
   tools = payload;

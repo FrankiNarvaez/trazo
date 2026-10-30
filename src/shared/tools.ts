@@ -28,6 +28,21 @@ const WIDTHS: Record<DrawTool, readonly [number, number, number]> = {
   eraser: [16, 32, 64],
 };
 
+/** The range a tool's settings slider offers for a free size, in the same units as its presets. */
+export const SIZE_RANGES: Record<DrawTool, readonly [number, number]> = {
+  pen: [1, 40],
+  highlighter: [8, 80],
+  laser: [3, 30],
+  shape: [1, 30],
+  text: [10, 120],
+  number: [14, 64],
+  recolor: [6, 80],
+  eraser: [8, 128],
+};
+
+/** Sizes set from a tool's settings, used instead of its thin / medium / thick preset. */
+export type CustomSizes = Partial<Record<DrawTool, number>>;
+
 /** Everything a canvas needs to know to turn the next gesture into ink. */
 export interface ToolState {
   tool: Tool;
@@ -35,6 +50,7 @@ export interface ToolState {
   color: string;
   size: SizeIndex;
   inkHidden: boolean;
+  custom: CustomSizes;
   /** What the next numbered badge will say. */
   nextNumber: number;
 }
@@ -45,8 +61,32 @@ export const isDrawTool = (tool: Tool): tool is DrawTool => tool !== "pointer";
 export type InkTool = Exclude<DrawTool, "eraser" | "recolor">;
 export const isInkTool = (tool: Tool): tool is InkTool => isDrawTool(tool) && tool !== "eraser" && tool !== "recolor";
 
-export function widthOf(tool: Tool, size: SizeIndex): number {
+/** The preset size `size` picks for a tool. */
+export function presetWidth(tool: Tool, size: SizeIndex): number {
   return WIDTHS[isDrawTool(tool) ? tool : "pen"][size];
+}
+
+/** A tool's size: the one set in its settings, or else the current preset. */
+export function widthOf(tool: Tool, tools: Pick<ToolState, "size" | "custom">): number {
+  return (isDrawTool(tool) ? tools.custom[tool] : undefined) ?? presetWidth(tool, tools.size);
+}
+
+/** Clamps `value` into a tool's slider range, in whole pixels. */
+export function clampSize(tool: DrawTool, value: number): number {
+  const [min, max] = SIZE_RANGES[tool];
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/** Saved custom sizes, keeping only known tools with a number, clamped into their range. */
+export function sanitizeSizes(value: unknown): CustomSizes {
+  const out: CustomSizes = {};
+  if (typeof value !== "object" || value === null) return out;
+  for (const [tool, size] of Object.entries(value)) {
+    if (tool in SIZE_RANGES && typeof size === "number" && Number.isFinite(size)) {
+      out[tool as DrawTool] = clampSize(tool as DrawTool, size);
+    }
+  }
+  return out;
 }
 
 /**
