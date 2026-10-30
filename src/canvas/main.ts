@@ -14,7 +14,7 @@ import {
   type CanvasCommand,
   type CanvasStatus,
 } from "../shared/protocol";
-import { COLORS, nextBadgeNumber, widthOf, type ToolState } from "../shared/tools";
+import { clampSize, COLORS, nextBadgeNumber, widthOf, type ToolState } from "../shared/tools";
 import { cursorFor } from "./cursor";
 import { Drawing } from "./history";
 import { LaserTrail } from "./laser";
@@ -145,24 +145,64 @@ function recorded(): void {
 // ── Text ─────────────────────────────────────────────────────────────────────
 
 /** The open text box, and the text stroke it is editing (null for a new text). */
-let editor: { box: HTMLTextAreaElement; at: Point; color: string; size: number; editing: TextStroke | null } | null =
-  null;
+let editor: {
+  box: HTMLTextAreaElement;
+  /** The corner you drag to make the text bigger or smaller. */
+  handle: HTMLElement;
+  at: Point;
+  color: string;
+  size: number;
+  editing: TextStroke | null;
+} | null = null;
 
+/** Sizes the box to its text, and keeps the resize corner on its bottom-right. */
 function fitEditor(): void {
   if (!editor) return;
-  const { box, size } = editor;
+  const { box, handle, at, size } = editor;
   const lines = box.value.split("\n").length;
-  box.style.width = `${Math.ceil(measureText(box.value, size) + size)}px`; // room for the caret
-  box.style.height = `${lines * lineHeight(size)}px`;
+  const w = Math.ceil(measureText(box.value, size) + size); // room for the caret
+  const h = lines * lineHeight(size);
+  Object.assign(box.style, { font: textFont(size), lineHeight: `${lineHeight(size)}px`, width: `${w}px`, height: `${h}px` });
+  handle.style.left = `${at.x + w + 4}px`;
+  handle.style.top = `${at.y + h + 4}px`;
 }
 
-/** Gives the box the font, color and halo the text will be painted with. */
+/**
+ * Dragging the corner scales the text from its top-left, like resizing a box. It never takes
+ * focus from the text box, so typing carries on after the drag.
+ */
+function resizeFrom(handle: HTMLElement): void {
+  const stop = (e: Event) => e.preventDefault(); // a click elsewhere would blur and save the text
+  handle.addEventListener("mousedown", stop);
+  handle.addEventListener("pointerdown", (e) => {
+    if (!editor || e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const { at, size: from } = editor;
+    const reach = (p: Point) => Math.max(1, p.x - at.x + (p.y - at.y));
+    const start = reach(pointOf(e));
+    const follow = (ev: PointerEvent) => {
+      if (!editor) return;
+      editor.size = clampSize("text", (from * reach(pointOf(ev))) / start);
+      fitEditor();
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", follow);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      editor?.box.focus();
+    };
+    handle.addEventListener("pointermove", follow);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
+}
+
+/** Gives the box the color and halo the text will be painted with; fitEditor sets its font. */
 function styleEditor(): void {
   if (!editor) return;
-  const { box, color, size } = editor;
+  const { box, color } = editor;
   Object.assign(box.style, {
-    font: textFont(size),
-    lineHeight: `${lineHeight(size)}px`,
     color,
     caretColor: color,
     textShadow: `0 0 2px ${textHalo(color)}, 0 0 2px ${textHalo(color)}`,
@@ -183,8 +223,11 @@ function openEditor(at: Point, editing: TextStroke | null): void {
   box.addEventListener("blur", () => {
     if (editor?.box === box) closeEditor(true);
   });
-  editor = { box, at, color: editing?.color ?? tools.color, size: editing?.width ?? width(), editing };
-  document.body.append(box);
+  const handle = document.createElement("div");
+  handle.className = "text-handle";
+  resizeFrom(handle);
+  editor = { box, handle, at, color: editing?.color ?? tools.color, size: editing?.width ?? width(), editing };
+  document.body.append(box, handle);
   styleEditor();
   if (editing) repaint(new Set([editing]));
   box.focus();
@@ -198,6 +241,7 @@ function closeEditor(save: boolean): void {
   if (!e) return;
   editor = null;
   e.box.remove();
+  e.handle.remove();
   const text = e.box.value;
   const empty = text.trim() === "";
   const old = e.editing;

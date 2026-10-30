@@ -28,11 +28,27 @@ canvas {
   margin: 0;
   padding: 0;
   border: 0;
-  outline: none;
   background: transparent;
   resize: none;
   overflow: hidden;
   white-space: pre;
   user-select: text;
   -webkit-user-select: text;
+  /* A dashed frame shows the box you are typing in; light and dark so it reads anywhere. */
+  outline: 1px dashed rgba(128, 128, 128, 0.85);
+  outline-offset: 4px;
+}
+
+/* The corner that makes the text bigger or smaller. */
+.text-handle {
+  position: fixed;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  box-sizing: border-box;
+  border: 1.5px solid #1c1c1e;
+  border-radius: 3px;
+  background: #fff;
+  cursor: nwse-resize;
+  touch-action: none;
 }

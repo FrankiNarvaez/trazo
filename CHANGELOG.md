@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- Texto: al escribir o editar, arrastra la esquina del recuadro para agrandar o achicar la letra; deshacer vuelve al tamaño anterior.
 - Ajustes de herramienta: clic derecho en una herramienta para elegir su tamaño exacto con un deslizador. Cada herramienta recuerda el suyo; el botón de grosor o [ ] vuelven a fino, medio y grueso.
 - Texto (T): clic para escribir; Enter guarda y ⌘/Ctrl+Enter pasa a otra línea. Clic en un texto para editarlo, y deshacer devuelve la versión anterior. Esc o Deshacer cancelan lo que escribes, y el color y el tamaño que elijas mientras escribes se aplican al texto.
 - Números: cada clic pone el siguiente (1, 2, 3…) con el color y el tamaño elegidos. La cuenta sigue entre pantallas, deshacer devuelve el número y borrar todo vuelve a 1.

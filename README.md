@@ -11,7 +11,7 @@ Dibuja y anota sobre cualquier pantalla, en **macOS y Windows**. Una barra compa
 | Lápiz y resaltador | Trazos suaves que se afinan con la velocidad; presión real con tableta o lápiz digital |
 | Puntero láser | Estela brillante que sigue al ratón y se desvanece sola; nunca queda como tinta |
 | Formas | Al elegir Formas se despliegan flecha, rectángulo, elipse y línea; al cambiar de herramienta se pliegan. Mayús: ángulos de 15°, cuadrados y círculos |
-| Texto | Clic para escribir con el color y el tamaño elegidos; si los cambias mientras escribes, el texto los toma. Enter guarda, ⌘Enter (Ctrl+Enter en Windows) pasa a otra línea, Esc o Deshacer cancelan y un clic fuera también guarda. Clic en un texto para editarlo; deshacer devuelve la versión anterior |
+| Texto | Clic para escribir con el color y el tamaño elegidos; si los cambias mientras escribes, el texto los toma. Enter guarda, ⌘Enter (Ctrl+Enter en Windows) pasa a otra línea, Esc o Deshacer cancelan y un clic fuera también guarda. Clic en un texto para editarlo; arrastra la esquina del recuadro para agrandarlo o achicarlo. Deshacer devuelve la versión anterior |
 | Números | Cada clic pone el siguiente: 1, 2, 3… con el color y el tamaño elegidos. El botón muestra qué número sigue; deshacer lo devuelve y borrar todo vuelve a 1 |
 | Recolorear | Toca o arrastra sobre un trazo, una forma o un número para darle el color elegido. Solo cambia lo que está encima (la tinta, no el resaltado de abajo) y se deshace en un paso |
 | Tamaño libre | Clic derecho en una herramienta abre sus ajustes: un deslizador para elegir el tamaño exacto, que cada herramienta recuerda. El botón de grosor o [ ] vuelven a fino, medio y grueso |
