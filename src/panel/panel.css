@@ -179,3 +179,11 @@ header svg {
     transition: none !important;
   }
 }
+
+/* A tool's settings: the size slider, in the current color. */
+.slider {
+  width: 100%;
+  margin: 2px 0 0;
+  accent-color: var(--color, #fff);
+  cursor: pointer;
+}

@@ -14,7 +14,7 @@ import {
   type CanvasCommand,
   type CanvasStatus,
 } from "../shared/protocol";
-import { COLORS, nextBadgeNumber, widthOf, type ToolState } from "../shared/tools";
+import { clampSize, COLORS, nextBadgeNumber, widthOf, type ToolState } from "../shared/tools";
 import { cursorFor } from "./cursor";
 import { Drawing } from "./history";
 import { LaserTrail } from "./laser";
@@ -45,7 +45,7 @@ const liveCanvas = document.getElementById("live") as HTMLCanvasElement;
 const ink = inkCanvas.getContext("2d")!;
 const live = liveCanvas.getContext("2d")!;
 
-let tools: ToolState = { tool: "pointer", shape: "arrow", color: COLORS[0], size: 1, inkHidden: false, nextNumber: 1 };
+let tools: ToolState = { tool: "pointer", shape: "arrow", color: COLORS[0], size: 1, inkHidden: false, nextNumber: 1, custom: {} };
 const drawing = new Drawing();
 const laser = new LaserTrail();
 
@@ -58,7 +58,7 @@ type Gesture =
   | { kind: "place"; at: Point };
 let gesture: Gesture | null = null;
 
-const width = () => widthOf(tools.tool, tools.size);
+const width = () => widthOf(tools.tool, tools);
 
 // ── Painting ─────────────────────────────────────────────────────────────────
 
@@ -115,7 +115,7 @@ function paintLive(now: number): void {
   live.clearRect(0, 0, innerWidth, innerHeight);
   const preview = gesture && strokeFor(gesture, false);
   if (preview) drawStroke(live, preview);
-  if (laser.draw(live, tools.color, widthOf("laser", tools.size), now)) requestFrame();
+  if (laser.draw(live, tools.color, widthOf("laser", tools), now)) requestFrame();
 }
 
 // ── Reporting to the toolbar ─────────────────────────────────────────────────
@@ -145,24 +145,64 @@ function recorded(): void {
 // ── Text ─────────────────────────────────────────────────────────────────────
 
 /** The open text box, and the text stroke it is editing (null for a new text). */
-let editor: { box: HTMLTextAreaElement; at: Point; color: string; size: number; editing: TextStroke | null } | null =
-  null;
+let editor: {
+  box: HTMLTextAreaElement;
+  /** The corner you drag to make the text bigger or smaller. */
+  handle: HTMLElement;
+  at: Point;
+  color: string;
+  size: number;
+  editing: TextStroke | null;
+} | null = null;
 
+/** Sizes the box to its text, and keeps the resize corner on its bottom-right. */
 function fitEditor(): void {
   if (!editor) return;
-  const { box, size } = editor;
+  const { box, handle, at, size } = editor;
   const lines = box.value.split("\n").length;
-  box.style.width = `${Math.ceil(measureText(box.value, size) + size)}px`; // room for the caret
-  box.style.height = `${lines * lineHeight(size)}px`;
+  const w = Math.ceil(measureText(box.value, size) + size); // room for the caret
+  const h = lines * lineHeight(size);
+  Object.assign(box.style, { font: textFont(size), lineHeight: `${lineHeight(size)}px`, width: `${w}px`, height: `${h}px` });
+  handle.style.left = `${at.x + w + 4}px`;
+  handle.style.top = `${at.y + h + 4}px`;
 }
 
-/** Gives the box the font, color and halo the text will be painted with. */
+/**
+ * Dragging the corner scales the text from its top-left, like resizing a box. It never takes
+ * focus from the text box, so typing carries on after the drag.
+ */
+function resizeFrom(handle: HTMLElement): void {
+  const stop = (e: Event) => e.preventDefault(); // a click elsewhere would blur and save the text
+  handle.addEventListener("mousedown", stop);
+  handle.addEventListener("pointerdown", (e) => {
+    if (!editor || e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const { at, size: from } = editor;
+    const reach = (p: Point) => Math.max(1, p.x - at.x + (p.y - at.y));
+    const start = reach(pointOf(e));
+    const follow = (ev: PointerEvent) => {
+      if (!editor) return;
+      editor.size = clampSize("text", (from * reach(pointOf(ev))) / start);
+      fitEditor();
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", follow);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      editor?.box.focus();
+    };
+    handle.addEventListener("pointermove", follow);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
+}
+
+/** Gives the box the color and halo the text will be painted with; fitEditor sets its font. */
 function styleEditor(): void {
   if (!editor) return;
-  const { box, color, size } = editor;
+  const { box, color } = editor;
   Object.assign(box.style, {
-    font: textFont(size),
-    lineHeight: `${lineHeight(size)}px`,
     color,
     caretColor: color,
     textShadow: `0 0 2px ${textHalo(color)}, 0 0 2px ${textHalo(color)}`,
@@ -183,8 +223,11 @@ function openEditor(at: Point, editing: TextStroke | null): void {
   box.addEventListener("blur", () => {
     if (editor?.box === box) closeEditor(true);
   });
-  editor = { box, at, color: editing?.color ?? tools.color, size: editing?.width ?? width(), editing };
-  document.body.append(box);
+  const handle = document.createElement("div");
+  handle.className = "text-handle";
+  resizeFrom(handle);
+  editor = { box, handle, at, color: editing?.color ?? tools.color, size: editing?.width ?? width(), editing };
+  document.body.append(box, handle);
   styleEditor();
   if (editing) repaint(new Set([editing]));
   box.focus();
@@ -198,6 +241,7 @@ function closeEditor(save: boolean): void {
   if (!e) return;
   editor = null;
   e.box.remove();
+  e.handle.remove();
   const text = e.box.value;
   const empty = text.trim() === "";
   const old = e.editing;
@@ -264,7 +308,7 @@ function along(from: Point, to: Point, spacing: number): Point[] {
 
 /** Marks every stroke the eraser touches between two points, however deep it sits. */
 function eraseAlong(g: Extract<Gesture, { kind: "erase" }>, from: Point, to: Point): void {
-  const radius = widthOf("eraser", tools.size) / 2;
+  const radius = widthOf("eraser", tools) / 2;
   const points = along(from, to, radius / 2);
   let touched = false;
   for (const s of drawing.strokes) {
@@ -281,7 +325,7 @@ function eraseAlong(g: Extract<Gesture, { kind: "erase" }>, from: Point, to: Poi
  * stroke under each point changes: tapping pen ink drawn over a highlight recolors the ink.
  */
 function recolorAlong(g: Extract<Gesture, { kind: "recolor" }>, from: Point, to: Point): void {
-  const radius = widthOf("recolor", tools.size) / 2;
+  const radius = widthOf("recolor", tools) / 2;
   let touched = false;
   for (const p of along(from, to, radius / 2)) {
     for (let i = drawing.strokes.length - 1; i >= 0; i--) {
@@ -412,10 +456,12 @@ window.addEventListener("keyup", (e) => {
 void win.listen<ToolState>(TOOL_STATE, ({ payload }) => {
   if (gesture && payload.tool !== tools.tool) finish();
   if (editor && payload.tool !== "text") closeEditor(true);
-  // A color or size picked in the toolbar while typing applies to the text in the box.
-  if (editor && (payload.color !== tools.color || payload.size !== tools.size)) {
+  // A color or size picked in the toolbar (or the text tool's settings) while typing applies
+  // to the text in the box.
+  const textSize = widthOf("text", payload);
+  if (editor && (payload.color !== tools.color || textSize !== widthOf("text", tools))) {
     if (payload.color !== tools.color) editor.color = payload.color;
-    if (payload.size !== tools.size) editor.size = widthOf("text", payload.size);
+    if (textSize !== widthOf("text", tools)) editor.size = textSize;
     styleEditor();
   }
   tools = payload;

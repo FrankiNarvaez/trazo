@@ -33,7 +33,7 @@ function ring(diameter: number, color = "#fff"): string {
 }
 
 export function cursorFor(tools: ToolState): string {
-  const width = widthOf(tools.tool, tools.size);
+  const width = widthOf(tools.tool, tools);
   switch (tools.tool) {
     case "pointer":
       return "default";

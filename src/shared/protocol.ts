@@ -4,6 +4,7 @@
  * tray clicks to the toolbar.
  */
 import type { Orientation, Rect } from "../toolbar/dock";
+import type { DrawTool } from "./tools";
 
 export const TOOLBAR_LABEL = "toolbar";
 export const PANEL_LABEL = "panel";
@@ -36,11 +37,8 @@ export interface CanvasStatus {
 // Toolbar → color panel
 export const PANEL_OPEN = "panel-open"; // PanelOpen: show (or retarget) the panel
 export const PANEL_CLOSE = "panel-close";
-export interface PanelOpen {
+interface PanelPlacement {
   title: string;
-  color: string;
-  /** The swatch's original color, offered as "reset"; null for a color outside the palette. */
-  original: string | null;
   /** The button that opened the panel and the toolbar around it, in native units. */
   anchor: Rect;
   bar: Rect;
@@ -48,8 +46,33 @@ export interface PanelOpen {
   hideFromCapture: boolean;
 }
 
+/** Picking a color for a swatch, or any color. */
+export interface ColorPanelOpen extends PanelPlacement {
+  kind: "color";
+  color: string;
+  /** The swatch's original color, offered as "reset"; null for a color outside the palette. */
+  original: string | null;
+}
+
+/** A tool's settings: for now, a free size within the tool's range. */
+export interface ToolPanelOpen extends PanelPlacement {
+  kind: "tool";
+  tool: DrawTool;
+  width: number;
+  /** The size the current thin / medium / thick preset gives, offered as "reset". */
+  preset: number;
+  min: number;
+  max: number;
+  /** Whether `width` is a size set here rather than the preset. */
+  custom: boolean;
+  color: string;
+}
+
+export type PanelOpen = ColorPanelOpen | ToolPanelOpen;
+
 // Color panel → toolbar
 export const PANEL_PICK = "panel-pick"; // color, live while dragging
+export const PANEL_SIZE = "panel-size"; // number, live while dragging; null goes back to the preset
 export const PANEL_DISMISSED = "panel-dismissed"; // its close button hid it
 
 // Rust → toolbar

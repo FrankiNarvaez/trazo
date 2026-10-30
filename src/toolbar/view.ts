@@ -21,11 +21,11 @@ import {
 } from "lucide";
 import { t } from "../shared/i18n";
 import { CLEAR_KEY, SHAPE_KEYS, TOOL_KEYS, UNDO_KEY } from "../shared/keys";
-import { COLORS, SHAPES, TOOLS, textOn, type InkTool, type ShapeKind, type Tool, type ToolState } from "../shared/tools";
+import { COLORS, SHAPES, SIZE_RANGES, TOOLS, isDrawTool, textOn, type DrawTool, type InkTool, type ShapeKind, type Tool, type ToolState } from "../shared/tools";
 import type { Layout } from "./state";
 
 /** What the color panel is editing: one of the six swatches, or a color outside the palette. */
-export type PanelTarget = { kind: "swatch"; index: number } | { kind: "custom" };
+export type PanelTarget = { kind: "swatch"; index: number } | { kind: "custom" } | { kind: "tool"; tool: DrawTool };
 
 export interface ViewState {
   tools: ToolState;
@@ -44,6 +44,8 @@ export interface ViewHandlers {
   pickSwatch(index: number): void;
   editSwatch(index: number, opener: HTMLElement): void;
   pickCustom(opener: HTMLElement): void;
+  /** Right-click on a tool: open its settings. */
+  editTool(tool: DrawTool, opener: HTMLElement): void;
   cycleSize(): void;
   undo(): void;
   clear(): void;
@@ -93,7 +95,8 @@ function button(className: string, label: string, onClick?: () => void): HTMLBut
 
 function toolLabel(tool: Tool): string {
   const hint = HINTS[tool];
-  return `${t[tool]} (${TOOL_KEYS[tool]})${hint ? ` · ${hint}` : ""}`;
+  const settings = isDrawTool(tool) ? ` · ${t.settingsHint}` : "";
+  return `${t[tool]} (${TOOL_KEYS[tool]})${hint ? ` · ${hint}` : ""}${settings}`;
 }
 
 function shapeLabel(shape: ShapeKind): string {
@@ -198,6 +201,7 @@ export class ToolbarView {
     tools.className = "group";
     for (const tool of TOOLS) {
       const b = button(tool === "shape" ? "tool variants" : "tool", "", () => this.on.pickTool(tool));
+      if (isDrawTool(tool)) this.onRightClick(b, () => this.on.editTool(tool, b));
       this.tools.set(tool, b);
       tools.append(b);
       if (tool === "shape") tools.append(this.buildShapeTray());
@@ -250,13 +254,21 @@ export class ToolbarView {
     tray.setAttribute("role", "group");
     tray.setAttribute("aria-label", t.shape);
     for (const shape of SHAPES) {
-      const b = button("tool", shapeLabel(shape), () => this.on.pickShape(shape));
+      const b = button("tool", `${shapeLabel(shape)} · ${t.settingsHint}`, () => this.on.pickShape(shape));
+      this.onRightClick(b, () => this.on.editTool("shape", b));
       this.setIcon(b, SHAPE_ICONS[shape]);
       this.shapes.set(shape, b);
       tray.append(b);
     }
     this.shapeTray = tray;
     return tray;
+  }
+
+  private onRightClick(b: HTMLElement, open: () => void): void {
+    b.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      open();
+    });
   }
 
   private patch(s: ViewState): void {
@@ -314,8 +326,15 @@ export class ToolbarView {
     }
 
     if (this.size) {
-      this.size.style.setProperty("--d", `${DOT_SIZES[size]}px`);
-      this.size.title = `${t.size}: ${t.sizes[size]} ([ ])`;
+      // A size set in the tool's settings shows as a dot between the smallest and largest.
+      const custom = isDrawTool(tool) ? s.tools.custom[tool] : undefined;
+      let dot = DOT_SIZES[size];
+      if (isDrawTool(tool) && custom !== undefined) {
+        const [min, max] = SIZE_RANGES[tool];
+        dot = Math.round(DOT_SIZES[0] + ((custom - min) / (max - min)) * (DOT_SIZES[2] - DOT_SIZES[0]));
+      }
+      this.size.style.setProperty("--d", `${dot}px`);
+      this.size.title = `${t.size}: ${custom !== undefined ? `${custom} px` : t.sizes[size]} ([ ])`;
       this.size.setAttribute("aria-label", this.size.title);
     }
     if (this.undo) this.undo.disabled = !s.canUndo;

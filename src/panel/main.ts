@@ -5,7 +5,17 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { createElement, RotateCcw, X, type IconNode } from "lucide";
 import { t } from "../shared/i18n";
 import { isMac } from "../shared/platform";
-import { PANEL_CLOSE, PANEL_DISMISSED, PANEL_OPEN, PANEL_PICK, TOOLBAR_LABEL, type PanelOpen } from "../shared/protocol";
+import {
+  PANEL_CLOSE,
+  PANEL_DISMISSED,
+  PANEL_OPEN,
+  PANEL_PICK,
+  PANEL_SIZE,
+  TOOLBAR_LABEL,
+  type ColorPanelOpen,
+  type PanelOpen,
+  type ToolPanelOpen,
+} from "../shared/protocol";
 import { MORE_COLORS } from "../shared/tools";
 import { centerOf, listMonitors, monitorAt, placeBeside, setFrame } from "../toolbar/dock";
 import { hexToHsv, hsvToHex, type Hsv } from "./hsv";
@@ -24,6 +34,8 @@ let shown = false;
 /** Bumped by every open and close, so a slow open can tell it was overtaken. */
 let generation = 0;
 let contentProtected = false;
+/** The tool whose settings are showing, with its preset size for "reset"; null while picking a color. */
+let toolSettings: { preset: number; custom: boolean } | null = null;
 
 // ── Building ─────────────────────────────────────────────────────────────────
 
@@ -45,7 +57,7 @@ function button(className: string, label: string, onClick: () => void, node?: Ic
 
 const title = el("span", "title");
 const hex = el("span", "hex");
-const reset = button("reset", t.resetColor, () => original && choose(original), RotateCcw);
+const reset = button("reset", t.resetColor, onReset, RotateCcw);
 const close = button("close", t.close, dismiss, X);
 const header = el("header", "");
 header.append(title, hex, reset, close);
@@ -69,7 +81,45 @@ const presetButtons = MORE_COLORS.map((color, i) => {
 });
 presets.append(...presetButtons);
 
-root.append(header, shade, hue, presets);
+// A tool's settings: a free size, from thin to thick.
+const slider = el("input", "slider");
+slider.type = "range";
+slider.step = "1";
+slider.setAttribute("aria-label", t.size);
+slider.addEventListener("input", () => {
+  if (!toolSettings) return;
+  toolSettings.custom = true;
+  paintSize();
+  void emitTo(TOOLBAR_LABEL, PANEL_SIZE, Number(slider.value));
+});
+
+root.append(header, shade, hue, presets, slider);
+
+/** Shows the color picker or a tool's settings. */
+function showMode(tool: boolean): void {
+  shade.hidden = hue.hidden = presets.hidden = tool;
+  slider.hidden = !tool;
+  reset.title = tool ? t.resetSize : t.resetColor;
+  reset.setAttribute("aria-label", reset.title);
+}
+
+function paintSize(): void {
+  hex.textContent = `${slider.value} px`;
+  reset.hidden = false;
+  reset.disabled = !toolSettings?.custom;
+}
+
+function onReset(): void {
+  if (toolSettings) {
+    // Back to the preset: the toolbar drops the size set here.
+    toolSettings.custom = false;
+    slider.value = String(toolSettings.preset);
+    paintSize();
+    void emitTo(TOOLBAR_LABEL, PANEL_SIZE, null);
+  } else if (original) {
+    choose(original);
+  }
+}
 
 // ── Picking ──────────────────────────────────────────────────────────────────
 
@@ -148,13 +198,30 @@ async function place(p: PanelOpen): Promise<void> {
   if (!isMac) await setFrame(frame);
 }
 
-async function open(p: PanelOpen): Promise<void> {
-  const id = ++generation;
+function openColor(p: ColorPanelOpen): void {
+  toolSettings = null;
+  showMode(false);
   original = p.original;
-  title.textContent = p.title;
-  root.setAttribute("aria-label", p.title);
   hsv = fromHex(p.color);
   paint();
+}
+
+function openTool(p: ToolPanelOpen): void {
+  toolSettings = { preset: p.preset, custom: p.custom };
+  showMode(true);
+  root.style.setProperty("--color", p.color);
+  slider.min = String(p.min);
+  slider.max = String(p.max);
+  slider.value = String(p.width);
+  paintSize();
+}
+
+async function open(p: PanelOpen): Promise<void> {
+  const id = ++generation;
+  title.textContent = p.title;
+  root.setAttribute("aria-label", p.title);
+  if (p.kind === "tool") openTool(p);
+  else openColor(p);
   if (p.hideFromCapture !== contentProtected) {
     contentProtected = p.hideFromCapture;
     await win.setContentProtected(contentProtected);
